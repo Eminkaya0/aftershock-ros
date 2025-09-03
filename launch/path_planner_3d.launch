@@ -8,7 +8,7 @@
         
         <!-- Planlama Parametreleri -->
         <param name="planning_timeout" value="5.0" />
-        <param name="robot_radius" value="0.15" />
+        <param name="robot_radius" value="0.4" />
         <param name="planning_resolution" value="0.05" />
         
         <!-- Planlama Sınırları -->

@@ -45,8 +45,8 @@ public:
         nh_.param<std::string>("global_frame", global_frame_, "world");
         nh_.param<std::string>("robot_base_frame", robot_base_frame_, "firefly/base_link");
         nh_.param<double>("planning_timeout", planning_timeout_, 5.0);
-        nh_.param<double>("robot_radius", robot_radius_, 0.1);
-        nh_.param<double>("safety_margin", safety_margin_, 0.1);
+        nh_.param<double>("robot_radius", robot_radius_, 0.4);
+        nh_.param<double>("safety_margin", safety_margin_, 0.05);
         nh_.param<int>("interpolation_points", interpolation_points_, 200);
         nh_.param<double>("goal_tolerance", goal_tolerance_, 0.1);
         
@@ -116,7 +116,7 @@ private:
 
         // Haritam yoksa hiçbir yer güvenli değil
         if (!octree_) {
-            // Harita henüz gelmediyse, hiçbir yer güvenli değil.
+            ROS_DEBUG("isStateValid: Octree bulunamadı");
             return false;
         }
 
@@ -125,27 +125,31 @@ private:
         const double x = se3_state->getX();
         const double y = se3_state->getY();
         const double z = se3_state->getZ();
+        
+        ROS_DEBUG("isStateValid: Kontrol edilen konum [%.2f, %.2f, %.2f]", x, y, z);
 
-        // Dronun etrafındaki küresel bir alanı kontrol et.
-        // Dronun merkezinden (yarıçap + güvenlik marjı) kadar uzaklıktaki noktaları kontrol ederiz.
-        // Bu, dronun gövdesinin herhangi bir engele çarpmamasını sağlar.
+        // Robot yarıçapı + güvenlik marjı kadar kontrol et
         double total_radius = robot_radius_ + safety_margin_;
-        for (double dx = -total_radius; dx <= total_radius; dx += octree_->getResolution()) {
-            for (double dy = -total_radius; dy <= total_radius; dy += octree_->getResolution()) {
-                for (double dz = -total_radius; dz <= total_radius; dz += octree_->getResolution()) {
-                    // Sadece kürenin içindeki noktaları kontrol et
-                    if (dx*dx + dy*dy + dz*dz <= total_radius*total_radius) {
-                        octomap::OcTreeNode* node = octree_->search(x + dx, y + dy, z + dz);
-                        // Eğer bu nokta haritada doluysa veya bilinmeyen bir alandaysa, state geçersizdir.
-                        if (!node || octree_->isNodeOccupied(node)) {
-                            return false; // Çarpışma var!
-                        }
-                    }
-                }
+        
+        // Sadece birkaç kritik nokta kontrol et (performans için)
+        std::vector<std::array<double, 3>> check_points = {
+            {0, 0, 0},  // merkez
+            {total_radius, 0, 0}, {-total_radius, 0, 0},  // x ekseni
+            {0, total_radius, 0}, {0, -total_radius, 0},  // y ekseni 
+            {0, 0, total_radius}, {0, 0, -total_radius}   // z ekseni
+        };
+        
+        for (const auto& offset : check_points) {
+            octomap::OcTreeNode* node = octree_->search(x + offset[0], y + offset[1], z + offset[2]);
+            if (!node || octree_->isNodeOccupied(node)) {
+                ROS_DEBUG("isStateValid: Çarpışma tespit edildi [%.2f, %.2f, %.2f]", 
+                         x + offset[0], y + offset[1], z + offset[2]);
+                return false;
             }
         }
         
         // Eğer döngü bittiyse ve hiçbir çarpışma bulunmadıysa, state geçerlidir.
+        ROS_DEBUG("isStateValid: Konum [%.2f, %.2f, %.2f] GEÇERLİ", x, y, z);
         return true;
     }
 
@@ -229,6 +233,32 @@ private:
         auto ss = std::make_shared<og::SimpleSetup>(space_information_);
         ss->setStartAndGoalStates(start, goal);
         ss->setPlanner(std::make_shared<og::RRTConnect>(space_information_)); // RRT algoritmasını kullan
+
+        // Start ve goal state'leri kontrol et
+        bool start_valid = space_information_->isValid(start.get());
+        bool goal_valid = space_information_->isValid(goal.get());
+        
+        ROS_INFO("Başlangıç konumu [%.2f, %.2f, %.2f] geçerli: %s", 
+                 transform_stamped.transform.translation.x,
+                 transform_stamped.transform.translation.y,
+                 transform_stamped.transform.translation.z,
+                 start_valid ? "EVET" : "HAYIR");
+        
+        ROS_INFO("Hedef konumu [%.2f, %.2f, %.2f] geçerli: %s", 
+                 goal_msg->pose.position.x,
+                 goal_msg->pose.position.y,
+                 goal_msg->pose.position.z,
+                 goal_valid ? "EVET" : "HAYIR");
+        
+        if (!start_valid) {
+            ROS_ERROR("Başlangıç konumu geçersiz! Planlama iptal edildi.");
+            return;
+        }
+        
+        if (!goal_valid) {
+            ROS_ERROR("Hedef konumu geçersiz! Planlama iptal edildi.");
+            return;
+        }
 
         // 4. Planlamayı Başlat ve Sonucu Kontrol Et
         ROS_INFO("3D yol planlaması başlatıldı...");
