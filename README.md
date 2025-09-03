@@ -19,7 +19,7 @@ Autonomous drone for navigating damaged buildings after earthquakes.
 ```bash
 # 1) Workspace
 mkdir -p ~/catkin_ws/src && cd ~/catkin_ws/src
-git clone https://github.com/<user>/seisdrone-ros1.git
+git clone https://github.com/Eminkaya0/aftershock-ros.git
 cd .. && rosdep install --from-paths src --ignore-src -y
 catkin_make
 source devel/setup.bash
