@@ -1,11 +1,15 @@
 #include <ros/ros.h>
+
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/octomap.h>
+
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Point.h>
+
 #include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/TransformStamped.h>
+
 #include <visualization_msgs/MarkerArray.h>
 
 #include <vector>

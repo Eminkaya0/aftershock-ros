@@ -29,6 +29,7 @@ RRT'nin temel adımları şunlardır:
 
 RRT, genellikle hızlı bir başlangıç çözümü sağlasa da, optimal çözümler bulmakta zorlanabilir. Bu nedenle, RRT'nin geliştirilmiş versiyonları ve diğer planlama algoritmaları ile birleştirilerek daha iyi sonuçlar elde edilmeye çalışılmaktadır.
 
+Önemli
 */
 
 

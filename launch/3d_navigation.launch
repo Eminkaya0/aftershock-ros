@@ -1,0 +1,14 @@
+<launch>
+    <node pkg="enkaz_rescue" type="path_planner_3d_node" name="path_planner_3d_node" output="screen">
+        <param name="global_frame" value="world" />
+        <param name="robot_base_frame" value="firefly/base_link" />
+        <param name="planning_timeout" value="5.0" />
+    </node>
+
+    <node pkg="enkaz_rescue" type="path_follower_node" name="path_follower_node" output="screen">
+        <param name="global_frame" value="world" />
+        <param name="robot_base_frame" value="firefly/base_link" />
+        <param name="max_linear_vel" value="0.7" />
+        <param name="max_angular_vel" value="0.4" />
+    </node>
+</launch>
