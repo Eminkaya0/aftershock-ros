@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Path Planner 3D Node -->
+    <node name="path_planner_3d" pkg="enkaz_rescue" type="path_planner_3d_node" output="screen">
+        <!-- Frame Parametreleri -->
+        <param name="global_frame" value="world" />
+        <param name="robot_base_frame" value="firefly/base_link" />
+        
+        <!-- Planlama Parametreleri -->
+        <param name="planning_timeout" value="5.0" />
+        <param name="robot_radius" value="0.15" />
+        <param name="planning_resolution" value="0.05" />
+        
+        <!-- Planlama Sınırları -->
+        <param name="bounds/x_min" value="-25.0" />
+        <param name="bounds/x_max" value="25.0" />
+        <param name="bounds/y_min" value="-25.0" />
+        <param name="bounds/y_max" value="25.0" />
+        <param name="bounds/z_min" value="0.5" />
+        <param name="bounds/z_max" value="20.0" />
+        
+        <!-- Yol İyileştirme Parametreleri -->
+        <param name="path_interpolation_points" value="100" />
+        <param name="simplification_timeout" value="2.0" />
+        
+        <!-- Topikler -->
+        <remap from="/exploration_goal" to="/exploration_goal" />
+        <remap from="/octomap_full" to="/octomap_full" />
+        <remap from="/planned_path" to="/path_planner_3d/path" />
+        <remap from="/path_marker" to="/path_planner_3d/path_marker" />
+    </node>
+    
+    <!-- Opsiyonel: RViz görselleştirme -->
+    <arg name="rviz" default="false" />
+    <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find enkaz_rescue)/rviz/path_planner_3d.rviz" />
+          
+</launch>

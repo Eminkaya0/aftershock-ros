@@ -1,0 +1,36 @@
+<launch>
+    <!-- Exploration Node - Keşif hedefleri üretir -->
+    <node pkg="enkaz_rescue" type="exploration_node" name="apartment_exploration_node" output="screen">
+        <param name="octomap_topic" value="/octomap_full" />
+        <param name="goal_topic" value="/exploration_goal" />
+        <param name="global_frame" value="world" />
+        <param name="robot_base_frame" value="firefly/base_link" />
+        <param name="update_frequency" value="0.5" />
+        <param name="min_cluster_size" value="15" />
+    </node>
+
+    <!-- 3D Path Planner - Direkt tanımlanıyor -->
+    <node name="path_planner_3d" pkg="enkaz_rescue" type="path_planner_3d_node" 
+          output="screen" launch-prefix="bash -c 'sleep 5; $0 $@'">
+        <param name="global_frame" value="world" />
+        <param name="robot_base_frame" value="firefly/base_link" />
+        <param name="planning_timeout" value="5.0" />
+        <param name="robot_radius" value="0.08" />
+        <param name="safety_margin" value="0.15" />
+        <param name="interpolation_points" value="50" />
+        <param name="goal_tolerance" value="0.05" />
+        
+        <!-- Planlama sınırları -->
+        <param name="bounds/x_min" value="-25.0" />
+        <param name="bounds/x_max" value="25.0" />
+        <param name="bounds/y_min" value="-25.0" />
+        <param name="bounds/y_max" value="25.0" />
+        <param name="bounds/z_min" value="0.5" />
+        <param name="bounds/z_max" value="20.0" />
+    </node>
+
+    <!-- Path Follower - Yol takip -->
+    <node name="path_follower" pkg="enkaz_rescue" type="path_follower_node" 
+          output="screen" launch-prefix="bash -c 'sleep 8; $0 $@'" />
+
+</launch>

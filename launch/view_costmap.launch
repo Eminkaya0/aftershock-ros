@@ -1,0 +1,7 @@
+<launch>
+
+    <node pkg="costmap_2d" type="costmap_2d_node" name="standalone_costmap" output="screen">
+        <rosparam file="$(find enkaz_rescue)/config/costmap_config.yaml" command="load" ns="standalone_costmap" />
+    </node>
+
+</launch>

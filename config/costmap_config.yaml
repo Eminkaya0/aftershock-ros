@@ -1,0 +1,35 @@
+# =================================================================
+# Standalone Costmap Konfigurasyonu - Sadece Gorsellestirme Icin
+# =================================================================
+
+# Global Parametreler
+global_frame: world         # Tum haritanin sabit oldugu ana koordinat sistemi (TF agacindaki en ust frame)
+robot_base_frame: firefly/base_link # Robotun hareket eden ana koordinat sistemi (TF agacindan dogru ismi bulmalisin!)
+update_frequency: 2.0       # Costmap'in saniyede kac kez guncellenecegi
+publish_frequency: 1.0      # Costmap'in RViz gibi arayuzlere saniyede kac kez yayinlanacagi
+
+# Harita Tipi Parametreleri
+# Statik bir harita (OctoMap gibi) uzerine costmap kuracagiz.
+static_map: true
+rolling_window: false # Lokal costmap'ler icin true olur, global icin false kalmali.
+resolution: 0.1       # Costmap cozunurlugu. OctoMap'inizin cozunurlugu ile ayni olmasi en iyisidir.
+
+# --- Katmanlar (Layers) ---
+# Costmap, farkli kaynaklardan gelen verileri katmanlar halinde birlestirir.
+# Bizim icin 2 temel katman yeterli: Statik harita ve Enflasyon (sisirme) katmani.
+plugins:
+  - {name: static_layer,    type: "costmap_2d::StaticLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+# 1. Katman: Statik Harita Katmani
+# OctoMap'ten gelen haritayi dinleyerek costmap'in temelini olusturur.
+static_layer:
+  map_topic: "/octomap_full" # octomap_server'in yayinladigi harita konusu. 'rostopic list' ile dogrulayabilirsin.
+  subscribe_to_updates: true
+
+# 2. Katman: Enflasyon Katmani
+# Statik haritadaki engellerin etrafina bir "guvenlik bolgesi" cizer.
+# Bu, robotun duvarlara veya nesnelere surtmesini engeller.
+inflation_layer:
+  inflation_radius: 0.35     # Engellerin etrafinda kac metrelik bir tampon bolge olusturulacagi. Robotunun yari capindan biraz buyuk olmali.
+  cost_scaling_factor: 10.0  # Tampon bolgenin maliyetinin ne kadar hizli dusecegini belirler. Genellikle 10 iyi bir degerdir.

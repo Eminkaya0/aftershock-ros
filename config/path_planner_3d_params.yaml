@@ -1,0 +1,46 @@
+# 3D Path Planner Parametreleri
+
+# Frame Konfigürasyonu
+global_frame: "world"
+robot_base_frame: "firefly/base_link"
+
+# Temel Planlama Parametreleri
+planning_timeout: 5.0          # Saniye cinsinden maksimum planlama süresi
+robot_radius: 0.15             # Drone'un güvenlik yarıçapı (metre)
+planning_resolution: 0.05      # Planlama çözünürlüğü (metre)
+
+# Workspace Sınırları (metre)
+bounds:
+  x_min: -25.0
+  x_max: 25.0
+  y_min: -25.0
+  y_max: 25.0
+  z_min: 0.5
+  z_max: 20.0
+
+# RRT Planlayıcı Parametreleri  
+rrt:
+  max_distance: 1.0            # RRT genişleme mesafesi
+  goal_bias: 0.1               # Hedefe doğru bias (0.0-1.0)
+  
+# Yol İyileştirme Parametreleri
+path_optimization:
+  interpolation_points: 100    # Yolu pürüzsüzleştirmek için nokta sayısı
+  simplification_timeout: 2.0  # Basitleştirme için maksimum süre
+  
+# Çarpışma Kontrolü
+collision_checking:
+  resolution: 0.01             # Çarpışma kontrolü çözünürlüğü (0.0-1.0)
+  safety_margin: 0.05          # Ek güvenlik marjı (metre)
+
+# Debug ve Log Ayarları
+debug:
+  verbose_logging: true        # Detaylı log çıktısı
+  publish_tree: false          # RRT ağacını görselleştir
+  
+# Topic İsimleri (gerekirse değiştirin)
+topics:
+  goal_topic: "/exploration_goal"
+  octomap_topic: "/octomap_full"
+  path_topic: "/planned_path"
+  marker_topic: "/path_marker"

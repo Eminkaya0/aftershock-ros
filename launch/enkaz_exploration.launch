@@ -1,0 +1,13 @@
+<launch>
+    <!-- Simülasyon -->
+    <include file="$(find rotors_gazebo)/launch/semantic_octomap_full.launch">
+        <arg name="world_name" value="$(find rotors_gazebo)/worlds/basic.world"/>
+    </include>
+    
+    <!-- Enkaz Navigator -->
+    <node name="enkaz_navigator" pkg="enkaz_rescue" type="enkaz_navigator.py" output="screen">
+        <rosparam file="$(find enkaz_rescue)/config/navigation_params.yaml" command="load"/>
+    </node>
+    
+    <!-- RViz -->
+</launch>

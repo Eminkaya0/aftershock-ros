@@ -1,0 +1,33 @@
+<launch>
+ <env name="ROSCONSOLE_CONFIG_FILE"
+value="$(find enkaz_rescue)/config/rosconsole.config"/>
+
+<!-- Gazebo simulator'ı başlat -->
+<include file="$(find rotors_gazebo)/launch/semantic_octomap_full.launch"/>
+
+<!-- Parametreleri yükle -->
+<rosparam file="$(find enkaz_rescue)/config/drone_params.yaml" command="load" ns="firefly_control"/>
+<rosparam file="$(find enkaz_rescue)/config/navigation_params.yaml" command="load" />
+
+<!-- BASİTLEŞTİRİLMİŞ GÖREV: Sadece 2 node -->
+
+<!-- Mission Coordinator - Ana görev yöneticisi -->
+<node name="mission_coordinator" pkg="enkaz_rescue" type="mission_coordinator.py" 
+      output="screen" launch-prefix="bash -c 'sleep 20; $0 $@'"/>
+
+<!-- Altitude Scanner - 80m yüksel ve fotoğraf çek -->
+<node name="altitude_scanner" pkg="enkaz_rescue" type="altitude_scanner.py" 
+      output="screen" launch-prefix="bash -c 'sleep 15; $0 $@'"/>
+
+<!-- Building Detector - Bina tespiti yap -->
+<node name="building_detector" pkg="enkaz_rescue" type="building_detector.py" 
+      output="screen" launch-prefix="bash -c 'sleep 25; $0 $@'"/>
+
+<!-- Geofence Generator - Geofence oluşturma -->
+<node name="geofence_generator" pkg="enkaz_rescue" type="geofence_generator.py" 
+      output="screen" launch-prefix="bash -c 'sleep 30; $0 $@'"/>
+
+
+<!-- DİĞER NODE'LAR KALDIRILDI - Sadece basit yükseklik taraması -->
+
+</launch>

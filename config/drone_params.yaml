@@ -1,0 +1,11 @@
+# Firefly drone parametreleri
+firefly:
+  mass: 1.5  # kg
+  max_thrust: 20.0  # N
+  max_velocity: 5.0  # m/s
+  max_angular_velocity: 3.14  # rad/s
+  
+control:
+  position_gain: [3.0, 3.0, 3.0]
+  velocity_gain: [2.0, 2.0, 2.0]
+  attitude_gain: [1.5, 1.5, 1.5]

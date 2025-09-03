@@ -1,0 +1,7 @@
+<launch>
+  <node pkg="enkaz_rescue" type="mission_coordinator.py" name="mission_coordinator" output="screen" required="true"/>
+  <node pkg="enkaz_rescue" type="altitude_scanner.py"  name="altitude_scanner"  output="screen"/>
+  <node pkg="enkaz_rescue" type="building_detector.py" name="building_detector" output="screen"/>
+  <node pkg="enkaz_rescue" type="building_navigator.py" name="building_navigator" output="screen"/>
+  <node pkg="enkaz_rescue" type="enkaz_navigator.py"    name="enkaz_navigator"    output="screen"/>
+</launch>

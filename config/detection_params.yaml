@@ -1,0 +1,18 @@
+# YOLO model parametreleri
+detection:
+  model_path: "/home/emin/catkin_ws/src/rotors_simulator/rotors_gazebo/models/best.pt"
+  confidence_threshold: 0.7
+  nms_threshold: 0.45
+  device: "cpu"  # veya "cuda:0"
+  
+# Kamera parametreleri  
+camera:
+  topic: "/firefly/vi_sensor/camera_depth/camera/image_raw"
+  info_topic: "/firefly/vi_sensor/camera_depth/camera/camera_info"
+  frame_id: "firefly/vi_sensor/camera_depth"
+  
+# Tespit sınıfları
+classes:
+  - sağlam_bina
+  - yıkık_bina
+  - enkaz

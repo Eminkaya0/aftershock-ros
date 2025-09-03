@@ -1,0 +1,29 @@
+# navigation_params.yaml
+
+# Görev parametreleri
+mission:
+  target_altitude: 80.0
+  scan_altitude: 80.0
+  approach_altitude: 30.0
+  scan_duration: 10.0
+  building_height_estimate: 15.0  # YENİ: Buraya ekledik
+  altitude_tolerance: 1.0
+  hover_duration: 3.0
+
+# Navigasyon parametreleri
+navigation:
+  waypoint_tolerance: 2.0
+  inspection_radius: 10.0
+  approach_speed: 2.0
+  inspection_speed: 1.0
+
+# Güvenlik parametreleri
+safety:
+  min_altitude: 5.0
+  max_altitude: 100.0
+  geofence_margin: 5.0  # Bu zaten vardı
+  obstacle_distance: 3.0
+
+# YENİ BÖLÜM: Çıktı dosyalarının yolları
+outputs:
+  geofence_file: "/home/emin/catkin_ws/src/enkaz_rescue/data/geofence.yaml"
