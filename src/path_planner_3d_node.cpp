@@ -11,7 +11,8 @@
 // OMPL Kütüphaneleri
 #include <ompl/base/SpaceInformation.h> // Planlama yapılacak uzay hakkında bilgileri kullanır.(Sınırlar çarpışma kontrolü vesaire)
 #include <ompl/base/spaces/SE3StateSpace.h> // 3 boyutlu uzayı x,y,z pozisyonu + rotasyon temsil eder. 
-#include <ompl/geometric/planners/rrt/RRTConnect.h> // OMPL içindeki planlama algoritmalarından biridir. 
+#include <ompl/geometric/planners/rrt/RRTConnect.h> // OMPL içindeki planlama algoritmalarından biridir.
+#include <ompl/geometric/planners/rrt/RRTstar.h> // Optimal RRT algoritması 
 #include <ompl/geometric/PathSimplifier.h> // Pathi daha güzel çizmek için koydum bunu 
 /*
 RRT NEDİR?
@@ -49,6 +50,7 @@ public:
         nh_.param<double>("safety_margin", safety_margin_, 0.05);
         nh_.param<int>("interpolation_points", interpolation_points_, 200);
         nh_.param<double>("goal_tolerance", goal_tolerance_, 0.1);
+        nh_.param<std::string>("planner_type", planner_type_, "RRTConnect"); // RRTConnect, RRTstar !!! istediğini seç !!!
         
         // Hedef takip değişkenlerini başlat
         has_previous_goal_ = false;
@@ -84,6 +86,7 @@ private:
     geometry_msgs::PoseStamped last_goal_;
     bool has_previous_goal_;
     double goal_tolerance_; // Hedef değişiklik eşiği
+    std::string planner_type_; // Planlayıcı tipi
 
     ob::SpaceInformationPtr space_information_; // OMPL' nin planlama yapacağı uzay hakkındaki bilgileri tutan nesne 
 
@@ -232,7 +235,17 @@ private:
         // 3. Planlayıcıyı kur
         auto ss = std::make_shared<og::SimpleSetup>(space_information_);
         ss->setStartAndGoalStates(start, goal);
-        ss->setPlanner(std::make_shared<og::RRTConnect>(space_information_)); // RRT algoritmasını kullan
+        
+        // Planlayıcı tipine göre algoritma seç
+        if (planner_type_ == "RRTstar") {
+            auto rrt_star = std::make_shared<og::RRTstar>(space_information_);
+            // RRT* için optimizasyon hedefi belirle (yol uzunluğunu minimize et)
+            ss->setPlanner(rrt_star);
+            ROS_INFO("RRT* planlayıcısı kullanılıyor (optimal yol arayışında)");
+        } else {
+            ss->setPlanner(std::make_shared<og::RRTConnect>(space_information_));
+            ROS_INFO("RRTConnect planlayıcısı kullanılıyor (hızlı çözüm)");
+        }
 
         // Start ve goal state'leri kontrol et
         bool start_valid = space_information_->isValid(start.get());
@@ -264,35 +277,39 @@ private:
         ROS_INFO("3D yol planlaması başlatıldı...");
         ob::PlannerStatus solved = ss->solve(planning_timeout_);
 
+        // ... goalCallback fonksiyonunun içinde ...
+
         if (solved) {
-        ROS_INFO("Yol bulundu! Şimdi basitleştiriliyor...");
-        
-        // --- YENİ EKLENEN KISIM ---
-        // PathSimplifier objesi oluştur.
-        auto simplifier = std::make_shared<og::PathSimplifier>(space_information_);
-        og::PathGeometric path = ss->getSolutionPath();
+            ROS_INFO("Yol bulundu! Şimdi basitleştiriliyor ve pürüzsüzleştiriliyor...");
 
-        // Yolu basitleştir ve daha pürüzsüz hale getirmeye çalış.
-        // Bu işlem, gereksiz ara noktaları kaldırır ve yolu kısaltır.
-        if (simplifier->simplify(path, planning_timeout_)) { // Kalan sürede basitleştirmeyi dene
-             ROS_INFO("Yol başarıyla basitleştirildi.");
-        } else {
-             ROS_WARN("Yol basitleştirilemedi, orijinal yol kullanılıyor.");
-        }
-        
-        // Daha fazla nokta ekleyerek yolu daha akıcı hale getir.
-        path.interpolate(interpolation_points_); // Parametreden okunan nokta sayısı kadar ekle
-        // --- YENİ KISIM SONU ---
+            // PathSimplifier objesi oluştur.
+            auto simplifier = std::make_shared<og::PathSimplifier>(space_information_);
+            og::PathGeometric path = ss->getSolutionPath();
 
-        publishPath(path);
-        
-        // Başarılı planlama sonrası hedefi kaydet
-        last_goal_ = *goal_msg;
-        has_previous_goal_ = true;
+            // 1. ADIM: Yoldaki gereksiz köşe noktalarını azalt (Mevcut kodunuz)
+            // Bu işlem, zikzakları azaltarak yolu kısaltır.
+            simplifier->simplify(path, planning_timeout_);
+
+            // 2. ADIM (YENİ): Yolu B-Spline ile pürüzsüzleştir.
+            // Bu, kalan keskin köşeleri yumuşak kavislerle değiştirir.
+            simplifier->smoothBSpline(path);
+
+            // 3. ADIM: Yolu daha akıcı hale getirmek için araya noktalar ekle (Mevcut kodunuz)
+            path.interpolate(interpolation_points_); 
+
+            ROS_INFO("Yol başarıyla pürüzsüzleştirildi ve yayınlanmaya hazır.");
+
+            publishPath(path);
+            
+            // Başarılı planlama sonrası hedefi kaydet
+            last_goal_ = *goal_msg;
+            has_previous_goal_ = true;
 
         } else {
             ROS_WARN("Belirtilen sürede yol bulunamadı.");
         }
+
+        // ... fonksiyonun geri kalanı ...
     }
 
         // Ompl'nin oluşturduğu yolu yayınla

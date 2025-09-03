@@ -13,6 +13,8 @@
 #include <visualization_msgs/MarkerArray.h>
 
 #include <vector>
+#include <cmath>
+#include <algorithm>
 #include <queue>
 #include <cmath>
 #include <algorithm>
@@ -246,14 +248,65 @@ private:
                 }
             }
             
+            // Hedef noktayı engellerden uzaklaştır (path planner için)
+            octomap::point3d safe_goal = findSafeGoalNearFrontier(closest_point);
+            
             geometry_msgs::Point goal_point;
-            goal_point.x = closest_point.x();
-            goal_point.y = closest_point.y();
-            goal_point.z = closest_point.z();
+            goal_point.x = safe_goal.x();
+            goal_point.y = safe_goal.y(); 
+            goal_point.z = safe_goal.z();
             goals.push_back(goal_point);
         }
         ROS_INFO("%zu adet potansiyel hedef noktasi belirlendi.", goals.size());
         return goals;
+    }
+
+    // Frontier yakınında path planner için güvenli hedef bul
+    octomap::point3d findSafeGoalNearFrontier(const octomap::point3d& frontier_point) {
+        // ===============================================================================
+        // DENEME AMAÇLI: TÜM HEDEFLERİ 1.25 METRE'YE SABİTLEDİK
+        // ===============================================================================
+        // AÇIKLAMA: Bu kod bloğu test amaçlıdır. Normalde hedefler frontier'lara
+        // çok yakın atılabiliyor, bu da problemlere neden olabiliyor.
+        // Test için tüm hedefleri 1.25 metre uzaklığa sabitliyoruz.
+        // ===============================================================================
+        const double search_radius = 1.25; // DENEME: 1.25 metre sabit arama yarıçapı
+        const double step_size = 0.2; // 20cm adımlar
+        
+        // ===============================================================================
+        // DENEME AMAÇLI: İLK ÖNCE 1.25 METRE UZAKLIĞA BAK, SONRA DAHA YAKINA GEL
+        // ===============================================================================
+        // Frontier'dan uzaklaşırken güvenli nokta ara - 1.25m'den başla
+        for (double radius = search_radius; radius >= step_size; radius -= step_size) {
+            // 8 yönde ara
+            for (int angle = 0; angle < 360; angle += 45) {
+                double rad = angle * M_PI / 180.0;
+                double x = frontier_point.x() + radius * cos(rad);
+                double y = frontier_point.y() + radius * sin(rad);
+                double z = frontier_point.z();
+                
+                octomap::point3d candidate(x, y, z);
+                
+                // Bu nokta etrafında 0.5m yarıçapında kontrol et
+                bool is_safe = true;
+                for (double dx = -0.5; dx <= 0.5 && is_safe; dx += 0.1) {
+                    for (double dy = -0.5; dy <= 0.5 && is_safe; dy += 0.1) {
+                        octomap::point3d check_point(x + dx, y + dy, z);
+                        octomap::OcTreeNode* node = octree_->search(check_point);
+                        if (!node || octree_->isNodeOccupied(node)) {
+                            is_safe = false;
+                        }
+                    }
+                }
+                
+                if (is_safe) {
+                    return candidate;
+                }
+            }
+        }
+        
+        // Güvenli nokta bulunamazsa orijinal noktayı döndür
+        return frontier_point;
     }
 
     void selectAndPublishBestGoal(std::vector<geometry_msgs::Point>& goals, const octomap::point3d& robot_pos) {
