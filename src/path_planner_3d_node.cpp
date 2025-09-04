@@ -1,40 +1,22 @@
-// DOSYA: path_planner_3d_node.cpp
+// DOSYA: path_planner_3d_node.cpp - İYİLEŞTİRİLMİŞ VERSİYON
 #include <ros/ros.h>
-#include <octomap_msgs/Octomap.h> // eğer baş harfi büyükse harita mesaj formatı için kullanılır demek 
+#include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/octomap.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
-#include <tf2_ros/transform_listener.h> // Robot haritanın neresinde sorusunun cevabı için 
+#include <tf2_ros/transform_listener.h>
 #include <visualization_msgs/Marker.h>
 
 // OMPL Kütüphaneleri
-#include <ompl/base/SpaceInformation.h> // Planlama yapılacak uzay hakkında bilgileri kullanır.(Sınırlar çarpışma kontrolü vesaire)
-#include <ompl/base/spaces/SE3StateSpace.h> // 3 boyutlu uzayı x,y,z pozisyonu + rotasyon temsil eder. 
-#include <ompl/geometric/planners/rrt/RRTConnect.h> // OMPL içindeki planlama algoritmalarından biridir.
-#include <ompl/geometric/planners/rrt/RRTstar.h> // Optimal RRT algoritması 
-#include <ompl/geometric/PathSimplifier.h> // Pathi daha güzel çizmek için koydum bunu 
-/*
-RRT NEDİR?
-
-RRT (Rapidly-exploring Random Tree), yüksek boyutlu uzaylarda yol bulma problemlerini çözmek için kullanılan bir algoritmadır. RRT, başlangıç noktasından rastgele noktalar seçerek ve bu noktaları bir ağaç yapısında birleştirerek çalışır. Bu sayede, karmaşık ve yüksek boyutlu alanlarda bile etkili bir şekilde yol bulma işlemi gerçekleştirilir.
-
-RRT, genellikle robotik uygulamalarda, özellikle de hareket planlamada kullanılır. Robotun hareket edebileceği alanı temsil eden bir ağaç yapısı oluşturarak, hedef noktaya ulaşmak için en uygun yolu bulmaya çalışır. RRT'nin en önemli avantajlarından biri, yüksek boyutlu uzaylarda bile hızlı bir şekilde çözüm bulabilmesidir.
-
-RRT'nin temel adımları şunlardır:
-
-1. Başlangıç noktasından rastgele bir hedef noktası seçilir.
-2. Seçilen hedef noktasına doğru bir yol oluşturmak için ağaç yapısına yeni bir düğüm eklenir.
-3. Yeni düğüm, mevcut ağaç yapısındaki diğer düğümlerle birleştirilir.
-4. Hedef noktaya ulaşana kadar bu adımlar tekrarlanır.
-
-RRT, genellikle hızlı bir başlangıç çözümü sağlasa da, optimal çözümler bulmakta zorlanabilir. Bu nedenle, RRT'nin geliştirilmiş versiyonları ve diğer planlama algoritmaları ile birleştirilerek daha iyi sonuçlar elde edilmeye çalışılmaktadır.
-
-Önemli
-*/
-
-
-#include <ompl/geometric/SimpleSetup.h> // OMPL'yi kolayca kurup çalıştırmak için kullanılır
+#include <ompl/base/SpaceInformation.h>
+#include <ompl/base/spaces/SE3StateSpace.h>
+#include <ompl/geometric/planners/rrt/RRTConnect.h>
+#include <ompl/geometric/planners/rrt/RRTstar.h>
+#include <ompl/geometric/planners/prm/PRMstar.h>  // YENİ: Daha optimal planlayıcı
+#include <ompl/geometric/PathSimplifier.h>
+#include <ompl/geometric/SimpleSetup.h>
+#include <ompl/base/objectives/PathLengthOptimizationObjective.h>  // YENİ: Optimizasyon hedefi
 
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
@@ -46,11 +28,25 @@ public:
         nh_.param<std::string>("global_frame", global_frame_, "world");
         nh_.param<std::string>("robot_base_frame", robot_base_frame_, "firefly/base_link");
         nh_.param<double>("planning_timeout", planning_timeout_, 5.0);
-        nh_.param<double>("robot_radius", robot_radius_, 0.4);
-        nh_.param<double>("safety_margin", safety_margin_, 0.05);
+        nh_.param<double>("robot_radius", robot_radius_, 0.6);
+        nh_.param<double>("safety_margin", safety_margin_, 0.4);
         nh_.param<int>("interpolation_points", interpolation_points_, 200);
         nh_.param<double>("goal_tolerance", goal_tolerance_, 0.1);
-        nh_.param<std::string>("planner_type", planner_type_, "RRTConnect"); // RRTConnect, RRTstar !!! istediğini seç !!!
+        nh_.param<std::string>("planner_type", planner_type_, "RRTstar"); // Varsayılan olarak RRT* kullan
+        
+        // YENİ: Path pürüzsüzleştirme parametreleri
+        nh_.param<double>("smoothing_time", smoothing_time_, 1.0);
+        nh_.param<int>("shortcut_attempts", shortcut_attempts_, 50);
+        nh_.param<double>("max_segment_length", max_segment_length_, 0.5);
+        nh_.param<double>("collision_check_resolution", collision_check_resolution_, 0.05);
+        
+        // YENİ: Dinamik sınırları oku
+        nh_.param<double>("bounds/x_min", x_min_, -25.0);
+        nh_.param<double>("bounds/x_max", x_max_, 25.0);
+        nh_.param<double>("bounds/y_min", y_min_, -25.0);
+        nh_.param<double>("bounds/y_max", y_max_, 25.0);
+        nh_.param<double>("bounds/z_min", z_min_, 0.5);
+        nh_.param<double>("bounds/z_max", z_max_, 20.0);
         
         // Hedef takip değişkenlerini başlat
         has_previous_goal_ = false;
@@ -60,129 +56,141 @@ public:
         octomap_sub_ = nh_.subscribe("/octomap_full", 1, &PathPlanner3D::octomapCallback, this);
         path_pub_ = nh_.advertise<nav_msgs::Path>("/planned_path", 1, true);
         marker_pub_ = nh_.advertise<visualization_msgs::Marker>("/path_marker", 1, true);
+        
+        // YENİ: Debug marker publisher
+        debug_marker_pub_ = nh_.advertise<visualization_msgs::Marker>("/path_debug_marker", 1, true);
 
-        setupOMPL(); // OMPL kurulumunu constructor'da çağır.
-        ROS_INFO("3D Path Planner Node başlatıldı.");
+        setupOMPL();
+        ROS_INFO("3D Path Planner Node başlatıldı (İyileştirilmiş Versiyon)");
     }
 
 private:
     ros::NodeHandle nh_;
     ros::Subscriber goal_sub_, octomap_sub_;
-    ros::Publisher path_pub_, marker_pub_;
-    tf2_ros::Buffer tf_buffer_; // Farklı koordinat bilgileri arasındaki dönüşüm bilgilerini saklar.
-    tf2_ros::TransformListener tf_listener_; // tf_buffer_'ı sürekli güncel tutan dinleyici
+    ros::Publisher path_pub_, marker_pub_, debug_marker_pub_;
+    tf2_ros::Buffer tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
 
-    // akıllı işaretçi işi bittiğinde siler veriyi
-    std::shared_ptr<octomap::OcTree> octree_;  // pointer
+    std::shared_ptr<octomap::OcTree> octree_;
 
     std::string global_frame_, robot_base_frame_;
     double planning_timeout_;
-    // Bir üye değişken olarak
-    double robot_radius_; // Drone'un yarıçapı - parametreden okunuyor
-    double safety_margin_; // Ek güvenlik marjı - duvarlara daha uzak geçmek için
-    int interpolation_points_; // Path interpolasyon nokta sayısı
+    double robot_radius_;
+    double safety_margin_;
+    int interpolation_points_;
     
-    // Son hedef pozisyonu takibi için
+    // YENİ parametreler
+    double smoothing_time_;
+    int shortcut_attempts_;
+    double max_segment_length_;
+    double collision_check_resolution_;
+    double x_min_, x_max_, y_min_, y_max_, z_min_, z_max_;
+    
     geometry_msgs::PoseStamped last_goal_;
     bool has_previous_goal_;
-    double goal_tolerance_; // Hedef değişiklik eşiği
-    std::string planner_type_; // Planlayıcı tipi
+    double goal_tolerance_;
+    std::string planner_type_;
 
-    ob::SpaceInformationPtr space_information_; // OMPL' nin planlama yapacağı uzay hakkındaki bilgileri tutan nesne 
+    ob::SpaceInformationPtr space_information_;
 
-
-
-
-
-
-    
     void octomapCallback(const octomap_msgs::Octomap::ConstPtr& msg) {
         octomap::AbstractOcTree* tree;
-        if (msg->binary) { // binary mi mesaj 
+        if (msg->binary) {
             tree = octomap_msgs::binaryMsgToMap(*msg);
         } else {
-            tree = octomap_msgs::fullMsgToMap(*msg); // Eğer mesaj binary değilse yani full formatta ise
+            tree = octomap_msgs::fullMsgToMap(*msg);
         }
         
         if (tree) {
-            octree_ = std::shared_ptr<octomap::OcTree>(dynamic_cast<octomap::OcTree*>(tree)); // Octomap Octree formatında dönüştürüldü mü bunu sorar 
+            octree_ = std::shared_ptr<octomap::OcTree>(dynamic_cast<octomap::OcTree*>(tree));
             ROS_INFO("OctoMap başarıyla alındı. Leaf sayısı: %zu", octree_->getNumLeafNodes());
         } else {
             ROS_ERROR("OctoMap mesaji dönüştürülemedi");
         }
     }
 
-
-    // BELİRLİ BİR KOORDİNAT BİR ENGELE ÇARPIYOR MU??????????????
-
+    // İYİLEŞTİRİLMİŞ: Daha hassas çarpışma kontrolü
     bool isStateValid(const ob::State *state) {
-
-        // Haritam yoksa hiçbir yer güvenli değil
         if (!octree_) {
             ROS_DEBUG("isStateValid: Octree bulunamadı");
             return false;
         }
 
-        // state paketimnden robotun 3 boyutlu konumunu çıkartır 
         const auto *se3_state = state->as<ob::SE3StateSpace::StateType>();
         const double x = se3_state->getX();
         const double y = se3_state->getY();
         const double z = se3_state->getZ();
         
-        ROS_DEBUG("isStateValid: Kontrol edilen konum [%.2f, %.2f, %.2f]", x, y, z);
-
-        // Robot yarıçapı + güvenlik marjı kadar kontrol et
+        // Toplam kontrol yarıçapı
         double total_radius = robot_radius_ + safety_margin_;
         
-        // Sadece birkaç kritik nokta kontrol et (performans için)
+        // İYİLEŞTİRİLMİŞ: Daha fazla kontrol noktası (küresel dağılım)
         std::vector<std::array<double, 3>> check_points = {
             {0, 0, 0},  // merkez
-            {total_radius, 0, 0}, {-total_radius, 0, 0},  // x ekseni
-            {0, total_radius, 0}, {0, -total_radius, 0},  // y ekseni 
-            {0, 0, total_radius}, {0, 0, -total_radius}   // z ekseni
+            // X-Y-Z eksenleri
+            {total_radius, 0, 0}, {-total_radius, 0, 0},
+            {0, total_radius, 0}, {0, -total_radius, 0},
+            {0, 0, total_radius}, {0, 0, -total_radius},
+            // Köşegenler (daha iyi kapsama için)
+            {total_radius*0.7, total_radius*0.7, 0},
+            {-total_radius*0.7, total_radius*0.7, 0},
+            {total_radius*0.7, -total_radius*0.7, 0},
+            {-total_radius*0.7, -total_radius*0.7, 0},
+            // Üst ve alt köşegenler
+            {total_radius*0.5, 0, total_radius*0.5},
+            {-total_radius*0.5, 0, total_radius*0.5},
+            {0, total_radius*0.5, total_radius*0.5},
+            {0, -total_radius*0.5, total_radius*0.5}
         };
         
         for (const auto& offset : check_points) {
-            octomap::OcTreeNode* node = octree_->search(x + offset[0], y + offset[1], z + offset[2]);
-            if (!node || octree_->isNodeOccupied(node)) {
+            octomap::point3d query_point(x + offset[0], y + offset[1], z + offset[2]);
+            
+            // Harita sınırları kontrolü
+            octomap::OcTreeKey key;
+            if (!octree_->coordToKeyChecked(query_point, key)) {
+                continue;  // Harita dışındaki noktaları atla
+            }
+            
+            octomap::OcTreeNode* node = octree_->search(query_point);
+            if (node && octree_->isNodeOccupied(node)) {
                 ROS_DEBUG("isStateValid: Çarpışma tespit edildi [%.2f, %.2f, %.2f]", 
                          x + offset[0], y + offset[1], z + offset[2]);
                 return false;
             }
         }
         
-        // Eğer döngü bittiyse ve hiçbir çarpışma bulunmadıysa, state geçerlidir.
-        ROS_DEBUG("isStateValid: Konum [%.2f, %.2f, %.2f] GEÇERLİ", x, y, z);
         return true;
     }
 
     void setupOMPL() {
-        // 1. Oyunun alanını tanımla (State Space)
-        auto space = std::make_shared<ob::SE3StateSpace>(); // Planlama yapacağımız uzayın 3 boyutlu olduğunu söylüyoruz (3B +rotasyon)
+        // 1. State Space tanımlama
+        auto space = std::make_shared<ob::SE3StateSpace>();
 
+        // 2. Dinamik sınırları kullan
+        ob::RealVectorBounds bounds(3);
+        bounds.setLow(0, x_min_); bounds.setHigh(0, x_max_);
+        bounds.setLow(1, y_min_); bounds.setHigh(1, y_max_);
+        bounds.setLow(2, z_min_); bounds.setHigh(2, z_max_);
+        space->setBounds(bounds);
 
-        // 2. Oyunun alanının sınırlarını çiz.
-        ob::RealVectorBounds bounds(3); // 3B alanın sınırlarını tanımlıyoruz
-        bounds.setLow(0, -20); bounds.setHigh(0, 20); // X ekseni : -20 ile  +20 arası
-        bounds.setLow(1, -20); bounds.setHigh(1, 20); // Y ekseni : -20 ile  +20 arası
-        bounds.setLow(2, 0); bounds.setHigh(2, 15);   // Z ekseni : 0 ile 15 arası
-        space->setBounds(bounds); // Robota sanal bir kutu tanımlıyoruz bunun dışına path çizemezsin
-
-        // 3. Alan bilgilerini ve Hakem ayarı
+        // 3. Space Information kurulumu
         space_information_ = std::make_shared<ob::SpaceInformation>(space);
-        space_information_->setStateValidityChecker([this](const ob::State *state) { return isStateValid(state); });
+        space_information_->setStateValidityChecker([this](const ob::State *state) { 
+            return isStateValid(state); 
+        });
         
-        // Bu satır, OMPL'e iki nokta arasındaki yolu kontrol ederken hangi sıklıkta
-        // isStateValid fonksiyonunu çağıracağını söyler. %1 (0.01) iyi bir başlangıçtır.
-        space_information_->setStateValidityCheckingResolution(0.01);
-
-
+        // İYİLEŞTİRİLMİŞ: Daha dengeli çarpışma kontrolü
+        space_information_->setStateValidityCheckingResolution(collision_check_resolution_);
+        
         space_information_->setup();
+        
+        ROS_INFO("OMPL kurulumu tamamlandı. Sınırlar: X[%.1f, %.1f] Y[%.1f, %.1f] Z[%.1f, %.1f]",
+                 x_min_, x_max_, y_min_, y_max_, z_min_, z_max_);
     }
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& goal_msg) {
-
-        // Hedef değişiklik kontrolü - aynı hedefe tekrar planlama yapma
+        // Hedef değişiklik kontrolü
         if (has_previous_goal_) {
             double dx = goal_msg->pose.position.x - last_goal_.pose.position.x;
             double dy = goal_msg->pose.position.y - last_goal_.pose.position.y;
@@ -190,170 +198,235 @@ private:
             double distance = sqrt(dx*dx + dy*dy + dz*dz);
             
             if (distance < goal_tolerance_) {
-                ROS_DEBUG("Hedef değişmedi (mesafe: %.3f < %.3f), planlama atlandı", distance, goal_tolerance_);
-                return; // Aynı hedef, planlama yapma
+                ROS_DEBUG("Hedef değişmedi, planlama atlandı");
+                return;
             }
         }
 
-        // HAZIRLIK VE KONTROL KODLARI
         ROS_INFO("Yeni hedef alındı: [%.2f, %.2f, %.2f]", 
                  goal_msg->pose.position.x, goal_msg->pose.position.y, goal_msg->pose.position.z);
         
         if (!octree_ || !space_information_) {
-            ROS_WARN("Harita veya OMPL kurulumu hazır değil. octree: %s, space_info: %s", 
-                     octree_ ? "OK" : "NULL", space_information_ ? "OK" : "NULL");
+            ROS_WARN("Harita veya OMPL kurulumu hazır değil");
             return;
         }
 
+        // Robot'un mevcut konumunu al
         geometry_msgs::TransformStamped transform_stamped;
         try {
-            transform_stamped = tf_buffer_.lookupTransform(global_frame_, robot_base_frame_, ros::Time(0), ros::Duration(1.0));
+            transform_stamped = tf_buffer_.lookupTransform(global_frame_, robot_base_frame_, 
+                                                          ros::Time(0), ros::Duration(1.0));
         } catch (tf2::TransformException &ex) {
             ROS_WARN("Başlangıç konumu alınamadı: %s", ex.what());
             return;
         }
 
-
-        // 1.Başlangıç konumunu belirle (Robot şuan nerede?)
-        //  !!!!!!   (tf_buffer_.lookupTransform ile robotun anlık konumu bulunur)
+        // Başlangıç ve hedef durumlarını tanımla
         ob::ScopedState<> start(space_information_);
         start->as<ob::SE3StateSpace::StateType>()->setXYZ(
             transform_stamped.transform.translation.x,
             transform_stamped.transform.translation.y,
             transform_stamped.transform.translation.z);
-        start->as<ob::SE3StateSpace::StateType>()->rotation().setIdentity(); //Robotun mevcut x y z'si 
+        start->as<ob::SE3StateSpace::StateType>()->rotation().setIdentity();
 
-
-        // 2. hedef konumu belirle (Robot nereye gitmeli?)
         ob::ScopedState<> goal(space_information_);
         goal->as<ob::SE3StateSpace::StateType>()->setXYZ(
-            goal_msg->pose.position.x, // Gelen hedef mesajındaki x,y,z
+            goal_msg->pose.position.x,
             goal_msg->pose.position.y,
             goal_msg->pose.position.z);
         goal->as<ob::SE3StateSpace::StateType>()->rotation().setIdentity();
 
-        // 3. Planlayıcıyı kur
-        auto ss = std::make_shared<og::SimpleSetup>(space_information_);
-        ss->setStartAndGoalStates(start, goal);
-        
-        // Planlayıcı tipine göre algoritma seç
-        if (planner_type_ == "RRTstar") {
-            auto rrt_star = std::make_shared<og::RRTstar>(space_information_);
-            // RRT* için optimizasyon hedefi belirle (yol uzunluğunu minimize et)
-            ss->setPlanner(rrt_star);
-            ROS_INFO("RRT* planlayıcısı kullanılıyor (optimal yol arayışında)");
-        } else {
-            ss->setPlanner(std::make_shared<og::RRTConnect>(space_information_));
-            ROS_INFO("RRTConnect planlayıcısı kullanılıyor (hızlı çözüm)");
-        }
-
-        // Start ve goal state'leri kontrol et
+        // Durum kontrolü
         bool start_valid = space_information_->isValid(start.get());
         bool goal_valid = space_information_->isValid(goal.get());
         
-        ROS_INFO("Başlangıç konumu [%.2f, %.2f, %.2f] geçerli: %s", 
-                 transform_stamped.transform.translation.x,
-                 transform_stamped.transform.translation.y,
-                 transform_stamped.transform.translation.z,
-                 start_valid ? "EVET" : "HAYIR");
-        
-        ROS_INFO("Hedef konumu [%.2f, %.2f, %.2f] geçerli: %s", 
-                 goal_msg->pose.position.x,
-                 goal_msg->pose.position.y,
-                 goal_msg->pose.position.z,
-                 goal_valid ? "EVET" : "HAYIR");
-        
-        if (!start_valid) {
-            ROS_ERROR("Başlangıç konumu geçersiz! Planlama iptal edildi.");
-            return;
-        }
-        
-        if (!goal_valid) {
-            ROS_ERROR("Hedef konumu geçersiz! Planlama iptal edildi.");
+        if (!start_valid || !goal_valid) {
+            ROS_ERROR("Başlangıç veya hedef konumu geçersiz!");
             return;
         }
 
-        // 4. Planlamayı Başlat ve Sonucu Kontrol Et
+        // İYİLEŞTİRİLMİŞ: Simple Setup ve optimizasyon hedefi
+        auto ss = std::make_shared<og::SimpleSetup>(space_information_);
+        ss->setStartAndGoalStates(start, goal);
+        
+        // YENİ: Optimizasyon hedefi ekle (daha kısa yollar için)
+        auto objective = std::make_shared<ob::PathLengthOptimizationObjective>(space_information_);
+        objective->setCostThreshold(ob::Cost(std::numeric_limits<double>::infinity()));
+        ss->setOptimizationObjective(objective);
+        
+        // Planlayıcı seçimi
+        if (planner_type_ == "RRTstar") {
+            auto rrt_star = std::make_shared<og::RRTstar>(space_information_);
+            rrt_star->setRange(2.0);  // YENİ: Daha büyük adımlar için
+            ss->setPlanner(rrt_star);
+            ROS_INFO("RRT* planlayıcısı kullanılıyor");
+        } else if (planner_type_ == "PRMstar") {
+            auto prm_star = std::make_shared<og::PRMstar>(space_information_);
+            ss->setPlanner(prm_star);
+            ROS_INFO("PRM* planlayıcısı kullanılıyor");
+        } else {
+            auto rrt_connect = std::make_shared<og::RRTConnect>(space_information_);
+            rrt_connect->setRange(2.0);  // YENİ: Daha büyük adımlar
+            ss->setPlanner(rrt_connect);
+            ROS_INFO("RRTConnect planlayıcısı kullanılıyor");
+        }
+
+        // Planlama
         ROS_INFO("3D yol planlaması başlatıldı...");
         ob::PlannerStatus solved = ss->solve(planning_timeout_);
 
-        // ... goalCallback fonksiyonunun içinde ...
-
         if (solved) {
-            ROS_INFO("Yol bulundu! Şimdi basitleştiriliyor ve pürüzsüzleştiriliyor...");
-
-            // PathSimplifier objesi oluştur.
-            auto simplifier = std::make_shared<og::PathSimplifier>(space_information_);
+            ROS_INFO("Ham yol bulundu! Şimdi optimize ediliyor...");
+            
             og::PathGeometric path = ss->getSolutionPath();
-
-            // 1. ADIM: Yoldaki gereksiz köşe noktalarını azalt (Mevcut kodunuz)
-            // Bu işlem, zikzakları azaltarak yolu kısaltır.
-            simplifier->simplify(path, planning_timeout_);
-
-            // 2. ADIM (YENİ): Yolu B-Spline ile pürüzsüzleştir.
-            // Bu, kalan keskin köşeleri yumuşak kavislerle değiştirir.
-            simplifier->smoothBSpline(path);
-
-            // 3. ADIM: Yolu daha akıcı hale getirmek için araya noktalar ekle (Mevcut kodunuz)
-            path.interpolate(interpolation_points_); 
-
-            ROS_INFO("Yol başarıyla pürüzsüzleştirildi ve yayınlanmaya hazır.");
-
+            
+            // İYİLEŞTİRİLMİŞ: Gelişmiş path optimizasyonu
+            optimizePath(path);
+            
             publishPath(path);
             
             // Başarılı planlama sonrası hedefi kaydet
             last_goal_ = *goal_msg;
             has_previous_goal_ = true;
-
+            
+            ROS_INFO("Path optimizasyonu tamamlandı. Nokta sayısı: %zu", 
+                     path.getStateCount());
         } else {
-            ROS_WARN("Belirtilen sürede yol bulunamadı.");
+            ROS_WARN("Belirtilen sürede yol bulunamadı");
         }
-
-        // ... fonksiyonun geri kalanı ...
+    }
+    
+    // YENİ: Gelişmiş path optimizasyon fonksiyonu
+    void optimizePath(og::PathGeometric& path) {
+        auto simplifier = std::make_shared<og::PathSimplifier>(space_information_);
+        
+        // 1. Önce kısayollar bul (gereksiz noktaları kaldır)
+        ROS_INFO("Kısayollar aranıyor...");
+        simplifier->shortcutPath(path, shortcut_attempts_, 0, 0.33, 0.01);
+        
+        // 2. Path'i basitleştir
+        ROS_INFO("Path basitleştiriliyor...");
+        simplifier->simplify(path, smoothing_time_);
+        
+        // 3. B-Spline ile pürüzsüzleştir (2 kez uygula daha iyi sonuç için)
+        ROS_INFO("B-Spline pürüzsüzleştirme uygulanıyor...");
+        simplifier->smoothBSpline(path, 3);  // 3 iterasyon
+        
+        // 4. Tekrar kısayol araması (pürüzsüzleştirme sonrası)
+        simplifier->shortcutPath(path, shortcut_attempts_/2, 0, 0.33, 0.01);
+        
+        // 5. Son kez pürüzsüzleştir
+        simplifier->smoothBSpline(path, 2);
+        
+        // 6. İnterpolasyon (yumuşak geçişler için)
+        path.interpolate(interpolation_points_);
+        
+        // 7. YENİ: Maksimum segment uzunluğuna göre böl
+        subdividePathSegments(path);
+    }
+    
+    // YENİ: Path segmentlerini maksimum uzunluğa göre böl
+    void subdividePathSegments(og::PathGeometric& path) {
+        og::PathGeometric new_path(space_information_);
+        
+        for (size_t i = 0; i < path.getStateCount() - 1; ++i) {
+            const auto* s1 = path.getState(i)->as<ob::SE3StateSpace::StateType>();
+            const auto* s2 = path.getState(i+1)->as<ob::SE3StateSpace::StateType>();
+            
+            double dx = s2->getX() - s1->getX();
+            double dy = s2->getY() - s1->getY();
+            double dz = s2->getZ() - s1->getZ();
+            double dist = sqrt(dx*dx + dy*dy + dz*dz);
+            
+            new_path.append(path.getState(i));
+            
+            // Segment çok uzunsa ara noktalar ekle
+            if (dist > max_segment_length_) {
+                int n_segments = ceil(dist / max_segment_length_);
+                for (int j = 1; j < n_segments; ++j) {
+                    double t = double(j) / n_segments;
+                    
+                    ob::ScopedState<> inter_state(space_information_);
+                    auto* inter = inter_state->as<ob::SE3StateSpace::StateType>();
+                    inter->setXYZ(
+                        s1->getX() + t * dx,
+                        s1->getY() + t * dy,
+                        s1->getZ() + t * dz
+                    );
+                    inter->rotation().setIdentity();
+                    
+                    if (space_information_->isValid(inter_state.get())) {
+                        new_path.append(inter_state.get());
+                    }
+                }
+            }
+        }
+        
+        // Son noktayı ekle
+        new_path.append(path.getState(path.getStateCount() - 1));
+        
+        path = new_path;
     }
 
-        // Ompl'nin oluşturduğu yolu yayınla
     void publishPath(const og::PathGeometric& path) {
-        // 1. Makine için Yol Mesajı Oluştur (Robotun Anlayacağı Format)
         nav_msgs::Path ros_path;
-        ros_path.header.stamp = ros::Time::now();      // Mesaja zaman damgası ekle
-        ros_path.header.frame_id = global_frame_;     // Koordinat sistemini belirt
+        ros_path.header.stamp = ros::Time::now();
+        ros_path.header.frame_id = global_frame_;
         
-        // 2. İnsan için Görsel İşaretçi Oluştur (Bizim Göreceğimiz Format)
         visualization_msgs::Marker path_marker;
-        path_marker.header = ros_path.header;          // Aynı zaman ve koordinat sistemi
-        path_marker.ns = "planned_path";               // İşaretçiye bir isim ver
-        path_marker.id = 0;                            // Benzersiz bir kimlik numarası
-        path_marker.type = visualization_msgs::Marker::LINE_STRIP; // Tipi: Birleştirilmiş çizgiler
-        path_marker.action = visualization_msgs::Marker::ADD;  // Ekrana ekle/güncelle
-        path_marker.pose.orientation.w = 1.0;          // Dönüklük (önemsiz)
-        path_marker.scale.x = 0.1;                     // Çizgi kalınlığı (0.1 metre)
-        path_marker.color.a = 1.0;                     // Opaklık (tamamen görünür)
-        path_marker.color.g = 1.0;                     // Renk (Yeşil)
+        path_marker.header = ros_path.header;
+        path_marker.ns = "planned_path";
+        path_marker.id = 0;
+        path_marker.type = visualization_msgs::Marker::LINE_STRIP;
+        path_marker.action = visualization_msgs::Marker::ADD;
+        path_marker.pose.orientation.w = 1.0;
+        path_marker.scale.x = 0.05;  // Daha ince çizgi
+        path_marker.color.a = 1.0;
+        path_marker.color.r = 0.0;
+        path_marker.color.g = 0.8;
+        path_marker.color.b = 0.2;
+        
+        // YENİ: Debug marker (waypoint'leri göster)
+        visualization_msgs::Marker waypoint_marker;
+        waypoint_marker.header = ros_path.header;
+        waypoint_marker.ns = "waypoints";
+        waypoint_marker.id = 1;
+        waypoint_marker.type = visualization_msgs::Marker::SPHERE_LIST;
+        waypoint_marker.action = visualization_msgs::Marker::ADD;
+        waypoint_marker.pose.orientation.w = 1.0;
+        waypoint_marker.scale.x = waypoint_marker.scale.y = waypoint_marker.scale.z = 0.1;
+        waypoint_marker.color.r = 1.0;
+        waypoint_marker.color.g = 0.0;
+        waypoint_marker.color.b = 0.0;
+        waypoint_marker.color.a = 0.7;
 
-        // 3. Yolu Nokta Nokta Gez ve İki Mesajı da Doldur
         for (std::size_t i = 0; i < path.getStateCount(); ++i) {
-            // OMPL formatındaki sıradaki noktayı al ve (x,y,z)'sini çıkar
             const auto* state = path.getState(i)->as<ob::SE3StateSpace::StateType>();
             double x = state->getX(), y = state->getY(), z = state->getZ();
             
-            // Bu noktayı makine için olan mesaja ekle
             geometry_msgs::PoseStamped pose;
             pose.header = ros_path.header;
             pose.pose.position.x = x;
             pose.pose.position.y = y;
             pose.pose.position.z = z;
+            pose.pose.orientation.w = 1.0;  // Rotasyon identity
             ros_path.poses.push_back(pose);
             
-            // Aynı noktayı insan için olan görsel çizgiye ekle
             geometry_msgs::Point p;
             p.x = x; p.y = y; p.z = z;
             path_marker.points.push_back(p);
+            
+            // Her 5. noktayı waypoint olarak işaretle
+            if (i % 5 == 0) {
+                waypoint_marker.points.push_back(p);
+            }
         }
 
-        // 4. Hazırlanan Mesajları Yayınla
         path_pub_.publish(ros_path);
         marker_pub_.publish(path_marker);
+        debug_marker_pub_.publish(waypoint_marker);
+        
+        ROS_INFO("Path yayınlandı: %zu nokta", ros_path.poses.size());
     }
 };
 

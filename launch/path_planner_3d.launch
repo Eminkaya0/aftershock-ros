@@ -8,14 +8,14 @@
         
         <!-- Planlama Parametreleri -->
         <param name="planning_timeout" value="5.0" />
-        <param name="robot_radius" value="0.4" />
+        <param name="robot_radius" value="0.5" />
         <param name="planning_resolution" value="0.05" />
         
         <!-- Planlama Sınırları -->
-        <param name="bounds/x_min" value="-11.5" />
-        <param name="bounds/x_max" value="-1.0" />
-        <param name="bounds/y_min" value="-5.0" />
-        <param name="bounds/y_max" value="5.0" />
+        <param name="bounds/x_min" value="-8.5" />
+        <param name="bounds/x_max" value="9.0" />
+        <param name="bounds/y_min" value="1.0" />
+        <param name="bounds/y_max" value="11.5" />
         <param name="bounds/z_min" value="0.5" />
         <param name="bounds/z_max" value="12.0" />
         
